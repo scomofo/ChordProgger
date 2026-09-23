@@ -278,7 +278,11 @@ function tokenIdentityKey(token: string): string {
             .digest("base64url");
         }
       }
-    } catch {}
+    } catch {
+      // Deliberately ignored: an unparseable JWT payload simply isn't a
+      // connector token, so fall through to hashing the whole token below.
+      // Failing closed here keeps the memo key stable without throwing.
+    }
   }
   return createHash("sha256").update(token).digest("base64url");
 }
