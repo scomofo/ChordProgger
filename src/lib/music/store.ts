@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { engine, type Playhead } from "./engine";
-import { PATTERNS, type PatternId, type VoiceId } from "./patterns";
-import { PRESETS, slotsFromRecipe } from "./progressions";
+import { engine, type Playhead } from "./engine.ts";
+import { PATTERNS, type PatternId, type VoiceId } from "./patterns.ts";
+import { PRESETS, slotsFromRecipe } from "./progressions.ts";
 import {
   DEFAULT_SLOTS,
   KEY_BY_ID,
@@ -14,7 +14,7 @@ import {
   type ModeId,
   type Quality,
   type Slot,
-} from "./theory";
+} from "./theory.ts";
 
 export type SavedChart = {
   id: string;
@@ -199,7 +199,14 @@ export const useCadence = create<CadenceState>()(
             slot.beats = 3;
           });
         }
-        set({ slots, selectedId: slots[0]?.id ?? null, saveName: preset.name });
+        set({
+          slots,
+          selectedId: slots[0]?.id ?? null,
+          saveName: preset.name,
+          // Minor-hint presets carry their own mode; the rest leave the
+          // current mode untouched.
+          mode: preset.mode ?? get().mode,
+        });
       },
       setSaveName: (saveName) => set({ saveName }),
       saveChart: () => {

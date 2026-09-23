@@ -1,4 +1,4 @@
-import { makeSlot, type Beats, type Quality, type Slot } from "./theory";
+import { makeSlot, type Beats, type ModeId, type Quality, type Slot } from "./theory.ts";
 
 export type RecipeStep = {
   degree: 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -13,6 +13,13 @@ export type Preset = {
   hint: string;
   genre: string;
   recipe: RecipeStep[];
+  /**
+   * The mode this preset is written in. `loadPreset` switches to it so
+   * minor-hint presets (e.g. "i–VII–VI–V") don't render with major
+   * qualities when the current mode is major. Presets without a mode
+   * leave the current mode untouched.
+   */
+  mode?: ModeId;
 };
 
 export const PRESETS: Preset[] = [
@@ -188,6 +195,7 @@ export const PRESETS: Preset[] = [
     name: "Andalusian",
     hint: "i–♭VII–♭VI–V",
     genre: "Minor",
+    mode: "minor",
     recipe: [
       { degree: 1, quality: "min" },
       { degree: 7, accidental: -1, quality: "maj" },
@@ -200,6 +208,7 @@ export const PRESETS: Preset[] = [
     name: "Lament",
     hint: "i–VII–VI–V",
     genre: "Minor",
+    mode: "minor",
     recipe: [
       { degree: 1 },
       { degree: 7 },
@@ -234,6 +243,7 @@ export const PRESETS: Preset[] = [
     name: "Pop minor",
     hint: "i–VI–III–VII",
     genre: "Pop",
+    mode: "minor",
     recipe: [
       { degree: 1 },
       { degree: 6 },
