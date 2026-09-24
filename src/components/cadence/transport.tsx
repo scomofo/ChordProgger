@@ -19,7 +19,7 @@ export function Transport() {
   const toggleMetronome = useCadence((s) => s.toggleMetronome);
 
   return (
-    <div className="border-t border-border bg-bg/95 backdrop-blur-sm">
+    <div className="border-t border-border bg-bg/90 shadow-[0_-20px_40px_color-mix(in_oklab,var(--color-bg)_70%,transparent)] backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:gap-6 md:px-6">
         <div className="flex items-center justify-center gap-2 md:justify-start">
           <Button
@@ -39,6 +39,7 @@ export function Transport() {
             aria-label={playing ? "Pause" : "Play"}
             disabled={slots.length === 0}
             onClick={togglePlay}
+            className={playing ? "ring-2 ring-accent ring-offset-2 ring-offset-bg" : undefined}
           >
             {playing ? <Pause className="size-6" /> : <Play className="ml-0.5 size-6" />}
           </Button>
@@ -67,7 +68,10 @@ export function Transport() {
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between">
               <span className="text-kicker tracking-wide text-subtle uppercase">Tempo</span>
-              <span className="font-display text-lg tabular-nums leading-none">{tempo}</span>
+              <span className="font-display text-lg leading-none tabular-nums">
+                {tempo}
+                <span className="ml-1 font-sans text-kicker tracking-wide text-subtle uppercase">bpm</span>
+              </span>
             </div>
             <Slider
               min={48}
