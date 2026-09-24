@@ -3,7 +3,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
-  Plus,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -47,47 +46,58 @@ export function ChordStage() {
   const diatonic = diatonicPalette(tonic, mode);
   const borrowed = borrowedPalette(tonic, mode);
 
+  const beatsTotal = slots.reduce((sum, slot) => sum + slot.beats, 0);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-3xl bg-surface p-2 hairline">
-        <div className="relative overflow-hidden rounded-2xl bg-elevated px-5 py-8 text-center md:px-8 md:py-10">
-          <p className="text-kicker font-medium tracking-kicker text-muted uppercase">
-            {active ? romanNumeral(mode, active) : "Add a chord"}
-          </p>
-          <h2 className="font-display mt-2 text-hero leading-none font-medium tracking-tight italic">
-            {active ? chordName(tonic, mode, active) : "—"}
-          </h2>
-          {voice && (
-            <p className="mt-4 font-mono text-sm text-subtle">
-              {Array.from(new Set(voice.all.map((m) => pcName(m, tonic.flats)))).join("  ·  ")}
+        <div className="relative overflow-hidden rounded-[1.35rem] bg-elevated px-5 py-9 text-center md:px-8 md:py-12">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_0%,color-mix(in_oklab,var(--color-ivory)_9%,transparent),transparent_58%)]" />
+          {playing && <span className="live-dot" aria-hidden />}
+          <div key={active ? `${active.id}-${chordName(tonic, mode, active)}` : "empty"} className="stage-in relative">
+            <p className="text-kicker font-medium tracking-kicker text-muted uppercase">
+              {active ? romanNumeral(mode, active) : "Add a chord"}
             </p>
-          )}
-          {next && active && (
-            <p className="mt-3 text-sm text-muted">
-              Next {slotLabel(tonic, mode, next, showNumerals).primary}
-            </p>
-          )}
-          <div className="absolute inset-x-0 bottom-0 h-1 bg-bg">
-            <div
-              className="progress-fill h-full bg-accent"
-              style={{ transform: `scaleX(${progress})` }}
-            />
+            <h2 className="font-display mt-2 text-hero leading-none font-medium tracking-tight italic">
+              {active ? chordName(tonic, mode, active) : "—"}
+            </h2>
+            {voice && (
+              <p className="mt-4 font-mono text-sm tracking-wide text-subtle">
+                {Array.from(new Set(voice.all.map((m) => pcName(m, tonic.flats)))).join("  ·  ")}
+              </p>
+            )}
+            {next && active && (
+              <p className="mt-3 text-sm text-muted">
+                Then {slotLabel(tonic, mode, next, showNumerals).primary}
+              </p>
+            )}
           </div>
+          {playing && (
+            <div className="absolute inset-x-6 bottom-4 h-1 overflow-hidden rounded-full bg-bg/80">
+              <div
+                className="progress-fill h-full bg-accent"
+                style={{ transform: `scaleX(${progress})` }}
+              />
+            </div>
+          )}
         </div>
       </div>
 
       <div>
         <div className="mb-2 flex items-baseline justify-between gap-3">
-          <h3 className="text-sm font-medium text-muted">Progression</h3>
-          <p className="font-mono text-xs text-subtle">
-            {slots.map((s) => romanNumeral(mode, s)).join(" – ") || "empty"}
+          <h3 className="text-kicker font-medium tracking-kicker text-subtle uppercase">Progression</h3>
+          <p className="truncate font-mono text-xs text-subtle">
+            {slots.length
+              ? `${slots.map((s) => romanNumeral(mode, s)).join(" – ")} · ${beatsTotal}`
+              : "Empty"}
           </p>
         </div>
         <div className="rounded-3xl bg-surface p-2 hairline">
           {slots.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-muted">
-              Pick a preset or add a scale degree to start writing.
-            </p>
+            <div className="px-4 py-10 text-center">
+              <p className="font-display text-2xl italic text-fg">An empty chart</p>
+              <p className="mt-1 text-sm text-muted">Load a preset, or tap a degree below.</p>
+            </div>
           ) : (
             <SequenceStrip
               slots={slots}
@@ -106,9 +116,9 @@ export function ChordStage() {
 
       <Inspector />
 
-      <div>
-        <h3 className="mb-2 text-sm font-medium text-muted">Scale degrees</h3>
-        <div className="flex flex-wrap gap-2">
+      <div className="rounded-3xl bg-surface p-3 hairline">
+        <h3 className="mb-2 text-kicker font-medium tracking-kicker text-subtle uppercase">Scale degrees</h3>
+        <div className="flex flex-wrap gap-1.5">
           {diatonic.map((item) => (
             <Button
               key={item.degree}
@@ -116,24 +126,15 @@ export function ChordStage() {
               variant="subtle"
               size="chip"
               onClick={() => addChord({ degree: item.degree, accidental: 0, quality: "auto" })}
-              className="min-w-14 flex-col gap-0 py-2 h-auto"
+              className="h-auto min-w-14 flex-col gap-0.5 py-2"
             >
               <span className="font-display text-base leading-none">{item.roman}</span>
               <span className="text-kicker text-subtle">{item.name}</span>
             </Button>
           ))}
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            aria-label="Add tonic"
-            onClick={() => addChord({ degree: 1 })}
-          >
-            <Plus className="size-4" />
-          </Button>
         </div>
-        <h3 className="mt-4 mb-2 text-sm font-medium text-muted">Borrowed</h3>
-        <div className="flex flex-wrap gap-2">
+        <h3 className="mt-4 mb-2 text-kicker font-medium tracking-kicker text-subtle uppercase">Borrowed</h3>
+        <div className="flex flex-wrap gap-1.5">
           {borrowed.map((item) => (
             <Button
               key={`${item.roman}-${item.name}`}
@@ -147,7 +148,7 @@ export function ChordStage() {
                   quality: item.quality,
                 })
               }
-              className="h-auto min-w-14 flex-col gap-0 py-2"
+              className="h-auto min-w-14 flex-col gap-0.5 py-2"
             >
               <span className="font-display text-sm leading-none">{item.roman}</span>
               <span className="text-kicker text-subtle">{item.name}</span>
@@ -193,7 +194,7 @@ function SequenceStrip({
   return (
     <div
       ref={scroller}
-      className="flex gap-2 overflow-x-auto pb-1"
+      className="sequence-scroll flex gap-2 overflow-x-auto pb-1"
     >
       {slots.map((slot, i) => {
         const labels = slotLabel(tonic, mode, slot, showNumerals);
@@ -205,17 +206,28 @@ function SequenceStrip({
             type="button"
             data-slot={slot.id}
             onClick={() => onSelect(slot.id)}
+            style={{ flex: `${slot.beats} 0 ${Math.max(5, slot.beats * 3.15)}rem` }}
             className={cn(
-              "press-scale relative min-w-20 shrink-0 overflow-hidden rounded-xl px-3 py-3 text-left",
+              "press-scale relative min-w-20 shrink-0 snap-center overflow-hidden rounded-xl px-3 py-3 text-left",
               isPlay ? "bg-accent text-accent-fg" : isSel ? "bg-primary text-primary-fg" : "bg-elevated text-fg",
             )}
           >
             <span className="block text-kicker tracking-wide uppercase opacity-70">{labels.secondary}</span>
             <span className="font-display mt-1 block text-xl leading-none">{labels.primary}</span>
-            <span className="mt-2 block font-mono text-kicker opacity-70">{slot.beats} beats</span>
+            <span className="mt-2 flex gap-1" aria-hidden>
+              {Array.from({ length: slot.beats }, (_, beat) => (
+                <span
+                  key={beat}
+                  className={cn(
+                    "h-1 flex-1 rounded-full",
+                    isPlay || isSel ? "bg-current opacity-40" : "bg-accent/70",
+                  )}
+                />
+              ))}
+            </span>
             {isPlay && (
               <span
-                className="progress-fill absolute inset-x-0 bottom-0 h-0.5 bg-accent-fg"
+                className="progress-fill absolute inset-x-0 bottom-0 h-0.5 bg-accent-fg/80"
                 style={{ transform: `scaleX(${progress})` }}
               />
             )}
@@ -237,14 +249,16 @@ function Inspector() {
 
   if (!slot) {
     return (
-      <p className="text-sm text-subtle">Select a chord to edit quality, inversion, and length.</p>
+      <p className="rounded-3xl bg-surface px-4 py-3 text-sm text-subtle hairline">
+        Select a chord to edit quality, inversion, and length.
+      </p>
     );
   }
 
   return (
     <div className="rounded-3xl bg-surface p-3 hairline">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-medium text-muted">Edit chord</h3>
+        <h3 className="text-kicker font-medium tracking-kicker text-subtle uppercase">Edit chord</h3>
         <div className="flex items-center gap-1">
           <Button type="button" variant="ghost" size="icon" aria-label="Move left" className="size-9" onClick={() => moveSlot(slot.id, -1)}>
             <ChevronLeft className="size-4" />

@@ -35,8 +35,8 @@ export function PianoStrip() {
             <div
               key={midi}
               className={cn(
-                "relative h-full min-w-0 flex-1 border-r border-bg last:border-r-0",
-                on ? "bg-key-on" : "bg-key-white",
+                "relative h-full min-w-0 flex-1 border-r border-bg/70 last:border-r-0",
+                on ? "key-white-on" : "key-white",
               )}
             />
           );
@@ -49,8 +49,8 @@ export function PianoStrip() {
             <div
               key={midi}
               className={cn(
-                "absolute top-0 z-10 h-3/5 rounded-b-sm",
-                on ? "bg-accent" : "bg-key-black",
+                "absolute top-0 z-10 h-[58%] rounded-b-md",
+                on ? "key-black-on" : "key-black",
               )}
               style={{
                 left: `calc(${whitesBefore * whiteWidth}% - ${whiteWidth * 0.32}%)`,
