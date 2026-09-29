@@ -1,4 +1,4 @@
-import { compilePattern, type PatternId, type VoiceId } from "./patterns";
+import { compilePattern, type PatternId, type VoiceId } from "./patterns.ts";
 import {
   midiToFreq,
   slotStarts,
@@ -7,7 +7,7 @@ import {
   type KeyInfo,
   type ModeId,
   type Slot,
-} from "./theory";
+} from "./theory.ts";
 
 export type EngineSnapshot = {
   tonic: KeyInfo;
