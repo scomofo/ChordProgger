@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { ChordStage } from "@/components/cadence/chord-stage";
+import { ListenPanel } from "@/components/cadence/listen-panel";
 import { PianoStrip } from "@/components/cadence/piano-strip";
 import { StudioSidebar } from "@/components/cadence/studio-sidebar";
 import { Transport } from "@/components/cadence/transport";
@@ -98,6 +99,7 @@ export function CadenceApp() {
                 Names
               </button>
             </div>
+            <ListenPanel />
           </div>
         </header>
 
