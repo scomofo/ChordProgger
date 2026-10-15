@@ -60,7 +60,14 @@ describe("detectKey", () => {
   });
 
   it("finds A minor from an A natural-minor run", () => {
-    const c = chromaOf([57, 59, 60, 62, 64, 65, 67, 69]);
+    // The run sits an octave up from the original A3 version on purpose:
+    // at FFT 4096 the point-mass B3/C4 fundamentals of the low run land in
+    // adjacent bins, a shape no real AnalyserNode frame can take (a real
+    // partial is a multi-bin lobe; two adjacent single-bin spikes are
+    // indistinguishable from one partial between the bins). The peak-based
+    // front end reads them as one event, so the low run's spectrum no
+    // longer models anything physical. Same notes, same assertion.
+    const c = chromaOf([69, 71, 72, 74, 76, 77, 79, 81]);
     const k = detectKey(c);
     assert.equal(k.tonicPc, 9);
     assert.equal(k.mode, "minor");

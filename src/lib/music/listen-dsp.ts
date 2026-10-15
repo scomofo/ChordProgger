@@ -31,9 +31,68 @@ function clamp01(v: number): number {
 }
 
 /**
+ * A spectral peak extracted from the dB spectrum: one candidate partial,
+ * with its frequency refined by parabolic interpolation on the log-magnitude
+ * (the standard estimator for a windowed sinusoid) and its linear amplitude.
+ */
+type Partial = { freq: number; amp: number };
+
+const CHROMA_LO_HZ = 55; // A1
+const CHROMA_HI_HZ = 2093; // C7
+/** Peaks weaker than this (relative to the strongest) are window artefacts
+ *  (Blackman sidelobe maxima sit ~58 dB down) or inaudible partials. */
+const PEAK_REL_FLOOR_DB = -50;
+
+/**
+ * Find local maxima in the dB spectrum and refine each by parabolic
+ * interpolation. Binning every FFT bin straight into a pitch class (the old
+ * approach) smears one low partial across ~5 pitch classes: at fftSize 4096 /
+ * 48 kHz a bin is 11.7 Hz wide while a semitone at C3 is 7.8 Hz, and the
+ * Blackman main lobe spans ~6 bins. A peak list keeps each partial's energy
+ * in the single pitch class its interpolated frequency belongs to.
+ */
+function findPartials(
+  db: ArrayLike<number>,
+  sampleRate: number,
+  fftSize: number,
+  floorDb: number,
+): Partial[] {
+  const binHz = sampleRate / fftSize;
+  const partials: Partial[] = [];
+  for (let i = 1; i < db.length - 1; i += 1) {
+    const d0 = db[i] ?? -Infinity;
+    if (!(d0 > floorDb)) continue;
+    const dm = db[i - 1] ?? -Infinity;
+    const dp = db[i + 1] ?? -Infinity;
+    if (!(d0 > dm && d0 >= dp)) continue;
+    let offset = 0;
+    let peakDb = d0;
+    if (Number.isFinite(dm) && Number.isFinite(dp)) {
+      const denom = dm - 2 * d0 + dp;
+      if (denom < 0) {
+        offset = Math.max(-0.5, Math.min(0.5, (0.5 * (dm - dp)) / denom));
+        peakDb = d0 - 0.25 * (dm - dp) * offset;
+      }
+    }
+    const freq = (i + offset) * binHz;
+    if (freq < CHROMA_LO_HZ || freq > CHROMA_HI_HZ) continue;
+    partials.push({ freq, amp: 10 ** (peakDb / 20) });
+  }
+  if (partials.length === 0) return partials;
+  const maxAmp = Math.max(...partials.map((p) => p.amp));
+  const relFloor = maxAmp * 10 ** (PEAK_REL_FLOOR_DB / 20);
+  return partials.filter((p) => p.amp >= relFloor);
+}
+
+/**
  * Fold an FFT magnitude spectrum (dB, as from AnalyserNode.getFloatFrequencyData)
  * into a 12-bin chromagram. Bins below `floorDb` are treated as silence.
  * Returns a max-normalized vector (all zeros when nothing is above the floor).
+ *
+ * The spectrum is first reduced to interpolated spectral peaks (see
+ * findPartials); each peak then votes for its pitch class with
+ * amplitude-compressed weight (sqrt), the usual dynamic-range compression
+ * for chroma so one loud note does not swamp the others.
  */
 export function dbToChroma(
   db: ArrayLike<number>,
@@ -42,18 +101,10 @@ export function dbToChroma(
   floorDb = -85,
 ): number[] {
   const chroma = new Array<number>(12).fill(0);
-  const binHz = sampleRate / fftSize;
-  const loHz = 55; // A1
-  const hiHz = 2093; // C7
-  for (let i = 1; i < db.length; i += 1) {
-    const v = db[i] ?? -Infinity;
-    if (v <= floorDb) continue;
-    const f = i * binHz;
-    if (f < loHz || f > hiHz) continue;
-    const linear = 10 ** ((v - floorDb) / 20); // 1..~large above the floor
-    const midi = 69 + 12 * Math.log2(f / 440);
+  for (const p of findPartials(db, sampleRate, fftSize, floorDb)) {
+    const midi = 69 + 12 * Math.log2(p.freq / 440);
     const pc = ((Math.round(midi) % 12) + 12) % 12;
-    chroma[pc] = (chroma[pc] ?? 0) + Math.sqrt(linear);
+    chroma[pc] = (chroma[pc] ?? 0) + Math.sqrt(p.amp);
   }
   const peak = Math.max(...chroma);
   if (peak <= 0) return chroma;
