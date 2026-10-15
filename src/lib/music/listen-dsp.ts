@@ -223,6 +223,14 @@ export type DetectedChord = {
   quality: string;
   /** Cosine similarity against the winning template, 0..1. */
   score: number;
+  /**
+   * Winning score minus the best score among templates spelling a different
+   * pitch-class set. Templates that spell the same set as the winner (the
+   * sus2/sus4 inversion pair, the three augmented rotations) are one
+   * sonority, not rivals; the margin measures how decisively the chroma
+   * prefers this sonority over every other one.
+   */
+  margin: number;
 };
 
 /**
@@ -233,7 +241,7 @@ export function detectChord(chroma: number[], minScore = 0.6): DetectedChord | n
   const norm = Math.sqrt(chroma.reduce((s, v) => s + v * v, 0));
   if (norm <= 0) return null;
   const unit = chroma.map((v) => v / norm);
-  let best: DetectedChord | null = null;
+  const scored: (DetectedChord & { setKey: string })[] = [];
   for (let root = 0; root < 12; root += 1) {
     for (const t of CHORD_TEMPLATES) {
       const template = new Array<number>(12).fill(0.08);
@@ -241,10 +249,48 @@ export function detectChord(chroma: number[], minScore = 0.6): DetectedChord | n
       const tNorm = Math.sqrt(template.reduce((s, v) => s + v * v, 0));
       let dot = 0;
       for (let i = 0; i < 12; i += 1) dot += (unit[i] ?? 0) * ((template[i] ?? 0) / tNorm);
-      if (!best || dot > best.score) best = { rootPc: root, quality: t.quality, score: dot };
+      const setKey = t.intervals
+        .map((iv) => (root + iv) % 12)
+        .sort((a, b) => a - b)
+        .join(",");
+      scored.push({ rootPc: root, quality: t.quality, score: dot, margin: 0, setKey });
     }
   }
-  return best && best.score >= minScore ? best : null;
+  let best = scored[0] as DetectedChord & { setKey: string };
+  for (const c of scored) if (c.score > best.score) best = c;
+  if (best.score < minScore) return null;
+  let runnerUp = 0;
+  for (const c of scored) {
+    if (c.setKey !== best.setKey && c.score > runnerUp) runnerUp = c.score;
+  }
+  return {
+    rootPc: best.rootPc,
+    quality: best.quality,
+    score: best.score,
+    margin: best.score - runnerUp,
+  };
+}
+
+/**
+ * How far the winning sonority must beat every rival sonority before the
+ * chord readout shows it. A flat or ambiguous chroma (steady noise, a bare
+ * fifth) gives several sonorities the same score, so its margin sits at
+ * ~0; real chords in the corpus clear 0.11, and synthetic noise spectra
+ * stay under 0.04 — 0.05 sits in the empty band between them.
+ */
+export const CHORD_MIN_MARGIN = 0.05;
+
+/**
+ * The chord readout's own gate, deliberately independent of the key
+ * detector: an augmented triad's symmetric chroma can never establish a
+ * key (its key confidence sits near 0.1), yet it matches its own template
+ * decisively. What the readout answers to is the chord match's evidence —
+ * its score cleared detectChord's floor, and its margin over every other
+ * sonority clears CHORD_MIN_MARGIN — so ambiguous or noisy input, whose
+ * margin collapses, still shows nothing.
+ */
+export function chordReadout(chord: DetectedChord | null): DetectedChord | null {
+  return chord && chord.margin >= CHORD_MIN_MARGIN ? chord : null;
 }
 
 /** True when the spectrum carries almost no energy above the noise floor. */

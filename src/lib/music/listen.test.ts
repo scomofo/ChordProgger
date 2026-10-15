@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  CHORD_MIN_MARGIN,
+  chordReadout,
   dbToChroma,
   detectChord,
   detectKey,
@@ -100,6 +102,66 @@ describe("detectChord", () => {
   it("returns null for silence", () => {
     const db = new Float32Array(FFT_SIZE / 2).fill(-100);
     assert.equal(detectChord(dbToChroma(db, SAMPLE_RATE, FFT_SIZE)), null);
+  });
+});
+
+describe("chordReadout", () => {
+  it("shows an augmented chord whose key confidence never clears the old key gate", () => {
+    // A pure augmented chroma is symmetric, so no key profile fits it —
+    // under the old wiring (chord shown only when key confidence > 0.25)
+    // this readout was blank even though the chord match is decisive.
+    const chroma = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
+    const key = detectKey(chroma);
+    assert.ok(key.confidence <= 0.25, `key confidence ${key.confidence}`);
+    const readout = chordReadout(detectChord(chroma));
+    assert.equal(readout?.rootPc, 0);
+    assert.equal(readout?.quality, "aug");
+  });
+
+  it("shows an augmented triad read from a spectrum", () => {
+    const readout = chordReadout(detectChord(chromaOf([48, 52, 56]))); // C3 E3 G#3
+    assert.equal(readout?.rootPc, 0);
+    assert.equal(readout?.quality, "aug");
+  });
+
+  it("passes an ordinary triad through", () => {
+    const readout = chordReadout(detectChord(chromaOf([55, 59, 62]))); // G3 B3 D4
+    assert.equal(readout?.rootPc, 7);
+    assert.equal(readout?.quality, "maj");
+  });
+
+  it("shows nothing for broadband noise that fools the score floor", () => {
+    // A deterministic jagged spectrum: peaks everywhere above the quiet
+    // floor, so detectChord's score alone returns a spurious chord — but
+    // no sonority wins decisively, the margin collapses, and the readout
+    // stays blank. Decoupling from the key gate must not mean hallucinating.
+    const db = new Float32Array(FFT_SIZE / 2).fill(-100);
+    for (let i = 2; i < db.length; i += 1) db[i] = -74 + ((i * 7919) % 23);
+    const chord = detectChord(dbToChroma(db, SAMPLE_RATE, FFT_SIZE));
+    assert.ok(chord, "the score floor alone would hallucinate a chord here");
+    assert.ok((chord?.margin ?? 1) < CHORD_MIN_MARGIN, `margin ${chord?.margin}`);
+    assert.equal(chordReadout(chord), null);
+  });
+
+  it("shows nothing for an inharmonic partial cluster", () => {
+    const db = new Float32Array(FFT_SIZE / 2).fill(-100);
+    const binHz = SAMPLE_RATE / FFT_SIZE;
+    let s = 1234567;
+    const rnd = () => {
+      s = (s * 1103515245 + 12345) % 2147483648;
+      return s / 2147483648;
+    };
+    for (let n = 0; n < 40; n += 1) {
+      const bin = Math.round((60 + rnd() * 1800) / binHz);
+      db[bin] = -48 - rnd() * 18;
+    }
+    const chord = detectChord(dbToChroma(db, SAMPLE_RATE, FFT_SIZE));
+    assert.equal(chordReadout(chord), null);
+  });
+
+  it("shows nothing for a flat, empty spectrum", () => {
+    const db = new Float32Array(FFT_SIZE / 2).fill(-70);
+    assert.equal(chordReadout(detectChord(dbToChroma(db, SAMPLE_RATE, FFT_SIZE))), null);
   });
 });
 
