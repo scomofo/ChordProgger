@@ -223,17 +223,46 @@ export type DetectedChord = {
   quality: string;
   /** Cosine similarity against the winning template, 0..1. */
   score: number;
+  /**
+   * Winning score minus the best score among templates spelling a different
+   * pitch-class set. Templates that spell the same set as the winner (the
+   * sus2/sus4 inversion pair, the three augmented rotations) are one
+   * sonority, not rivals; the margin measures how decisively the chroma
+   * prefers this sonority over every other one.
+   */
+  margin: number;
 };
+
+export type DetectChordOptions = {
+  /** Minimum winning cosine score. */
+  minScore?: number;
+  /**
+   * Pitch class of the bass note (see bassPitchClass). Consulted only to
+   * spell a genuine tie, never to override a real score gap.
+   */
+  bassPc?: number | null;
+};
+
+/**
+ * Two templates genuinely tie when they spell the same pitch-class set
+ * from different roots: a sus2 and the sus4 a fifth above it share one
+ * set, and an augmented triad's three rotations are one set. Their
+ * template vectors are identical, so their scores agree to floating-point
+ * summation dust (exactly 0 across the measurement corpus); 1e-9 sits far
+ * above that dust and far below any real score gap.
+ */
+const SCORE_TIE_EPSILON = 1e-9;
 
 /**
  * Match the chromagram against triad/seventh templates. Returns null when
  * nothing matches convincingly (thin or noisy input).
  */
-export function detectChord(chroma: number[], minScore = 0.6): DetectedChord | null {
+export function detectChord(chroma: number[], options: DetectChordOptions = {}): DetectedChord | null {
+  const minScore = options.minScore ?? 0.6;
   const norm = Math.sqrt(chroma.reduce((s, v) => s + v * v, 0));
   if (norm <= 0) return null;
   const unit = chroma.map((v) => v / norm);
-  let best: DetectedChord | null = null;
+  const scored: (DetectedChord & { setKey: string })[] = [];
   for (let root = 0; root < 12; root += 1) {
     for (const t of CHORD_TEMPLATES) {
       const template = new Array<number>(12).fill(0.08);
@@ -241,10 +270,85 @@ export function detectChord(chroma: number[], minScore = 0.6): DetectedChord | n
       const tNorm = Math.sqrt(template.reduce((s, v) => s + v * v, 0));
       let dot = 0;
       for (let i = 0; i < 12; i += 1) dot += (unit[i] ?? 0) * ((template[i] ?? 0) / tNorm);
-      if (!best || dot > best.score) best = { rootPc: root, quality: t.quality, score: dot };
+      const setKey = t.intervals
+        .map((iv) => (root + iv) % 12)
+        .sort((a, b) => a - b)
+        .join(",");
+      scored.push({ rootPc: root, quality: t.quality, score: dot, margin: 0, setKey });
     }
   }
-  return best && best.score >= minScore ? best : null;
+  let best = scored[0] as DetectedChord & { setKey: string };
+  for (const c of scored) if (c.score > best.score) best = c;
+  if (best.score < minScore) return null;
+  // Genuine tie: the tied templates spell one sonority, so the chroma
+  // alone cannot choose between them — the bass note can, because a sus2
+  // and its inverted sus4 differ exactly by which note is lowest. If a
+  // tied candidate's root is the bass pitch class, it wins; a bass that
+  // matches no tied root leaves the iteration-order winner in place.
+  let winner = best;
+  if (options.bassPc != null) {
+    const tied = scored.find(
+      (c) =>
+        c.setKey === best.setKey &&
+        best.score - c.score <= SCORE_TIE_EPSILON &&
+        c.rootPc === options.bassPc,
+    );
+    if (tied) winner = tied;
+  }
+  let runnerUp = 0;
+  for (const c of scored) {
+    if (c.setKey !== winner.setKey && c.score > runnerUp) runnerUp = c.score;
+  }
+  return {
+    rootPc: winner.rootPc,
+    quality: winner.quality,
+    score: winner.score,
+    margin: winner.score - runnerUp,
+  };
+}
+
+/**
+ * How far the winning sonority must beat every rival sonority before the
+ * chord readout shows it. A flat or ambiguous chroma (steady noise, a bare
+ * fifth) gives several sonorities the same score, so its margin sits at
+ * ~0; real chords in the corpus clear 0.11, and synthetic noise spectra
+ * stay under 0.04 — 0.05 sits in the empty band between them.
+ */
+export const CHORD_MIN_MARGIN = 0.05;
+
+/**
+ * The chord readout's own gate, deliberately independent of the key
+ * detector: an augmented triad's symmetric chroma can never establish a
+ * key (its key confidence sits near 0.1), yet it matches its own template
+ * decisively. What the readout answers to is the chord match's evidence —
+ * its score cleared detectChord's floor, and its margin over every other
+ * sonority clears CHORD_MIN_MARGIN — so ambiguous or noisy input, whose
+ * margin collapses, still shows nothing.
+ */
+export function chordReadout(chord: DetectedChord | null): DetectedChord | null {
+  return chord && chord.margin >= CHORD_MIN_MARGIN ? chord : null;
+}
+
+/**
+ * Pitch class of the bass note: the lowest strong fundamental in the
+ * spectrum, read off the same peak list the chroma is built from, so it
+ * inherits the peak floors (window sidelobes and sub-55 Hz rumble never
+ * qualify). The lowest peak is always a fundamental — nothing below it
+ * exists whose harmonic it could be. Returns null when the spectrum has
+ * no usable peak.
+ */
+export function bassPitchClass(
+  db: ArrayLike<number>,
+  sampleRate: number,
+  fftSize: number,
+  floorDb = -85,
+): number | null {
+  const partials = findPartials(db, sampleRate, fftSize, floorDb);
+  if (partials.length === 0) return null;
+  let lowest = partials[0] as Partial;
+  for (const p of partials) if (p.freq < lowest.freq) lowest = p;
+  const midi = Math.round(69 + 12 * Math.log2(lowest.freq / 440));
+  return ((midi % 12) + 12) % 12;
 }
 
 /** True when the spectrum carries almost no energy above the noise floor. */
