@@ -85,14 +85,63 @@ function findPartials(
 }
 
 /**
+ * Highest harmonic order whose predicted energy is discounted. Beyond this
+ * a partial's expected amplitude (< 1/12 of its fundamental) is down in the
+ * noise the peak floor already rejects.
+ */
+const HARMONIC_MAX_ORDER = 12;
+/**
+ * How far a partial's ratio to a lower partial may drift from an exact
+ * integer before it stops counting as that partial's harmonic. Parabolic
+ * interpolation locates isolated peaks to a fraction of a bin, but at low
+ * frequencies neighbouring chord-tone lobes overlap and bias positions by up
+ * to ~a quarter semitone; 30 cents covers that while staying well clear of
+ * the 100-cent spacing between real fundamentals.
+ */
+const HARMONIC_TOLERANCE_CENTS = 30;
+
+/**
+ * Discount the energy in each partial that a lower partial's harmonic series
+ * already explains, so overtones stop voting as if they were independent
+ * notes. A harmonic series radiates its k-th partial at roughly 1/k of the
+ * fundamental's amplitude (the sawtooth / vibrating-string law), so a peak
+ * at k·f is predicted to carry amp(f)/k from the note at f alone. Whatever
+ * energy remains above that prediction is real evidence for a note at the
+ * peak's own frequency (a chord tone a twelfth up still votes with the
+ * excess); whatever does not remain was never a note — it was the lower
+ * note's timbre. This is what stops a minor triad's overtones from spelling
+ * a major-seventh chord a third up for the template matcher.
+ */
+function discountHarmonics(partials: Partial[]): Partial[] {
+  const sorted = [...partials].sort((a, b) => a.freq - b.freq);
+  const out: Partial[] = [];
+  for (let i = 0; i < sorted.length; i += 1) {
+    const p = sorted[i] as Partial;
+    let residual = p.amp;
+    for (let j = 0; j < i; j += 1) {
+      const lower = sorted[j] as Partial;
+      const ratio = p.freq / lower.freq;
+      const k = Math.round(ratio);
+      if (k < 2 || k > HARMONIC_MAX_ORDER) continue;
+      const centsOff = Math.abs(1200 * Math.log2(ratio / k));
+      if (centsOff > HARMONIC_TOLERANCE_CENTS) continue;
+      residual -= lower.amp / k;
+    }
+    if (residual > 0) out.push({ freq: p.freq, amp: residual });
+  }
+  return out;
+}
+
+/**
  * Fold an FFT magnitude spectrum (dB, as from AnalyserNode.getFloatFrequencyData)
  * into a 12-bin chromagram. Bins below `floorDb` are treated as silence.
  * Returns a max-normalized vector (all zeros when nothing is above the floor).
  *
  * The spectrum is first reduced to interpolated spectral peaks (see
- * findPartials); each peak then votes for its pitch class with
- * amplitude-compressed weight (sqrt), the usual dynamic-range compression
- * for chroma so one loud note does not swamp the others.
+ * findPartials), harmonic energy explained by lower partials is discounted
+ * (see discountHarmonics), and each remaining partial votes for its pitch
+ * class with amplitude-compressed weight (sqrt), the usual dynamic-range
+ * compression for chroma so one loud note does not swamp the others.
  */
 export function dbToChroma(
   db: ArrayLike<number>,
@@ -101,7 +150,7 @@ export function dbToChroma(
   floorDb = -85,
 ): number[] {
   const chroma = new Array<number>(12).fill(0);
-  for (const p of findPartials(db, sampleRate, fftSize, floorDb)) {
+  for (const p of discountHarmonics(findPartials(db, sampleRate, fftSize, floorDb))) {
     const midi = 69 + 12 * Math.log2(p.freq / 440);
     const pc = ((Math.round(midi) % 12) + 12) % 12;
     chroma[pc] = (chroma[pc] ?? 0) + Math.sqrt(p.amp);
