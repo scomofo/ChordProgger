@@ -233,11 +233,32 @@ export type DetectedChord = {
   margin: number;
 };
 
+export type DetectChordOptions = {
+  /** Minimum winning cosine score. */
+  minScore?: number;
+  /**
+   * Pitch class of the bass note (see bassPitchClass). Consulted only to
+   * spell a genuine tie, never to override a real score gap.
+   */
+  bassPc?: number | null;
+};
+
+/**
+ * Two templates genuinely tie when they spell the same pitch-class set
+ * from different roots: a sus2 and the sus4 a fifth above it share one
+ * set, and an augmented triad's three rotations are one set. Their
+ * template vectors are identical, so their scores agree to floating-point
+ * summation dust (exactly 0 across the measurement corpus); 1e-9 sits far
+ * above that dust and far below any real score gap.
+ */
+const SCORE_TIE_EPSILON = 1e-9;
+
 /**
  * Match the chromagram against triad/seventh templates. Returns null when
  * nothing matches convincingly (thin or noisy input).
  */
-export function detectChord(chroma: number[], minScore = 0.6): DetectedChord | null {
+export function detectChord(chroma: number[], options: DetectChordOptions = {}): DetectedChord | null {
+  const minScore = options.minScore ?? 0.6;
   const norm = Math.sqrt(chroma.reduce((s, v) => s + v * v, 0));
   if (norm <= 0) return null;
   const unit = chroma.map((v) => v / norm);
@@ -259,15 +280,30 @@ export function detectChord(chroma: number[], minScore = 0.6): DetectedChord | n
   let best = scored[0] as DetectedChord & { setKey: string };
   for (const c of scored) if (c.score > best.score) best = c;
   if (best.score < minScore) return null;
+  // Genuine tie: the tied templates spell one sonority, so the chroma
+  // alone cannot choose between them — the bass note can, because a sus2
+  // and its inverted sus4 differ exactly by which note is lowest. If a
+  // tied candidate's root is the bass pitch class, it wins; a bass that
+  // matches no tied root leaves the iteration-order winner in place.
+  let winner = best;
+  if (options.bassPc != null) {
+    const tied = scored.find(
+      (c) =>
+        c.setKey === best.setKey &&
+        best.score - c.score <= SCORE_TIE_EPSILON &&
+        c.rootPc === options.bassPc,
+    );
+    if (tied) winner = tied;
+  }
   let runnerUp = 0;
   for (const c of scored) {
-    if (c.setKey !== best.setKey && c.score > runnerUp) runnerUp = c.score;
+    if (c.setKey !== winner.setKey && c.score > runnerUp) runnerUp = c.score;
   }
   return {
-    rootPc: best.rootPc,
-    quality: best.quality,
-    score: best.score,
-    margin: best.score - runnerUp,
+    rootPc: winner.rootPc,
+    quality: winner.quality,
+    score: winner.score,
+    margin: winner.score - runnerUp,
   };
 }
 
@@ -291,6 +327,28 @@ export const CHORD_MIN_MARGIN = 0.05;
  */
 export function chordReadout(chord: DetectedChord | null): DetectedChord | null {
   return chord && chord.margin >= CHORD_MIN_MARGIN ? chord : null;
+}
+
+/**
+ * Pitch class of the bass note: the lowest strong fundamental in the
+ * spectrum, read off the same peak list the chroma is built from, so it
+ * inherits the peak floors (window sidelobes and sub-55 Hz rumble never
+ * qualify). The lowest peak is always a fundamental — nothing below it
+ * exists whose harmonic it could be. Returns null when the spectrum has
+ * no usable peak.
+ */
+export function bassPitchClass(
+  db: ArrayLike<number>,
+  sampleRate: number,
+  fftSize: number,
+  floorDb = -85,
+): number | null {
+  const partials = findPartials(db, sampleRate, fftSize, floorDb);
+  if (partials.length === 0) return null;
+  let lowest = partials[0] as Partial;
+  for (const p of partials) if (p.freq < lowest.freq) lowest = p;
+  const midi = Math.round(69 + 12 * Math.log2(lowest.freq / 440));
+  return ((midi % 12) + 12) % 12;
 }
 
 /** True when the spectrum carries almost no energy above the noise floor. */

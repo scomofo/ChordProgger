@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   CHORD_MIN_MARGIN,
+  bassPitchClass,
   chordReadout,
   dbToChroma,
   detectChord,
@@ -162,6 +163,80 @@ describe("chordReadout", () => {
   it("shows nothing for a flat, empty spectrum", () => {
     const db = new Float32Array(FFT_SIZE / 2).fill(-70);
     assert.equal(chordReadout(detectChord(dbToChroma(db, SAMPLE_RATE, FFT_SIZE))), null);
+  });
+});
+
+describe("bassPitchClass", () => {
+  it("names the lowest note of a chord", () => {
+    assert.equal(bassPitchClass(synthSpectrum([53, 57, 61]), SAMPLE_RATE, FFT_SIZE), 5); // F3 lowest
+    assert.equal(bassPitchClass(synthSpectrum([55, 60, 62]), SAMPLE_RATE, FFT_SIZE), 7); // G3 lowest
+    assert.equal(bassPitchClass(synthSpectrum([69]), SAMPLE_RATE, FFT_SIZE), 9); // A4 alone
+  });
+
+  it("returns null for silence", () => {
+    const db = new Float32Array(FFT_SIZE / 2).fill(-100);
+    assert.equal(bassPitchClass(db, SAMPLE_RATE, FFT_SIZE), null);
+  });
+});
+
+describe("detectChord bass tie-break", () => {
+  // A sus2 and the sus4 a fifth above it spell the same pitch-class set,
+  // so their template scores tie exactly and iteration order alone used
+  // to pick the spelling — wrong whenever the tied partner's root was
+  // numerically smaller. The bass note is the only evidence that splits
+  // them, and it must only ever split a genuine tie.
+  it("reads F sus2 as sus2 when F is in the bass", () => {
+    const chroma = chromaOf([53, 55, 60]); // F3 G3 C4
+    assert.equal(detectChord(chroma)?.quality, "sus4"); // the tie, unbroken
+    const chord = detectChord(chroma, { bassPc: 5 });
+    assert.equal(chord?.rootPc, 5);
+    assert.equal(chord?.quality, "sus2");
+  });
+
+  it("reads G sus4 as sus4 when G is in the bass", () => {
+    const chroma = chromaOf([55, 60, 62]); // G3 C4 D4
+    assert.equal(detectChord(chroma)?.quality, "sus2"); // the tie, unbroken
+    const chord = detectChord(chroma, { bassPc: 7 });
+    assert.equal(chord?.rootPc, 7);
+    assert.equal(chord?.quality, "sus4");
+  });
+
+  it("reads A sus2 as sus2 when A is in the bass", () => {
+    const chroma = chromaOf([57, 59, 64]); // A3 B3 E4
+    const chord = detectChord(chroma, { bassPc: 9 });
+    assert.equal(chord?.rootPc, 9);
+    assert.equal(chord?.quality, "sus2");
+  });
+
+  it("spells an augmented triad from its bass note", () => {
+    const chroma = chromaOf([53, 57, 61]); // F3 A3 C#4: rotations tie too
+    assert.equal(detectChord(chroma)?.rootPc, 1);
+    const chord = detectChord(chroma, { bassPc: 5 });
+    assert.equal(chord?.rootPc, 5);
+    assert.equal(chord?.quality, "aug");
+  });
+
+  it("never lets the bass override a real score gap", () => {
+    const chord = detectChord(chromaOf([55, 59, 62]), { bassPc: 0 }); // G major, wrong bass
+    assert.equal(chord?.rootPc, 7);
+    assert.equal(chord?.quality, "maj");
+  });
+
+  it("ignores a bass that matches no tied root", () => {
+    const chord = detectChord(chromaOf([53, 55, 60]), { bassPc: 2 });
+    assert.equal(chord?.rootPc, 0);
+    assert.equal(chord?.quality, "sus4");
+  });
+
+  it("end to end: spectrum bass spells the readout", () => {
+    const db = synthSpectrum([53, 55, 60]); // F sus2, root position
+    const readout = chordReadout(
+      detectChord(dbToChroma(db, SAMPLE_RATE, FFT_SIZE), {
+        bassPc: bassPitchClass(db, SAMPLE_RATE, FFT_SIZE),
+      }),
+    );
+    assert.equal(readout?.rootPc, 5);
+    assert.equal(readout?.quality, "sus2");
   });
 });
 

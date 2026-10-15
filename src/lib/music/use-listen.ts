@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  bassPitchClass,
   chordReadout,
   dbToChroma,
   detectChord,
@@ -113,7 +114,10 @@ export function useListen() {
         // The chord readout answers to the chord match's own evidence
         // (chordReadout), not to the key's confidence: an augmented triad
         // can never establish a key, but it matches its template outright.
-        const chord = chordReadout(detectChord(live.chroma));
+        // The bass note spells genuine template ties (sus2 vs its
+        // inverted sus4, augmented rotations) that chroma cannot split.
+        const bassPc = bassPitchClass(live.freq, live.ctx.sampleRate, FFT_SIZE);
+        const chord = chordReadout(detectChord(live.chroma, { bassPc }));
         setSnapshot((s) => ({ ...s, quiet: false, key, chord, level }));
       }, TICK_MS);
       rig.current = state;
