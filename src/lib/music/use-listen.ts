@@ -21,7 +21,12 @@ export type ListenSnapshot = {
   level: number;
 };
 
-const FFT_SIZE = 4096;
+// 16384 samples ≈ 2.9 Hz bins at 48 kHz: a semitone at C3 is 7.8 Hz, so the
+// smaller 4096 window (11.7 Hz bins) cannot separate adjacent low notes.
+// The 120 ms tick still reads the trailing window; the chroma EMA in
+// listen-dsp smooths on a comparable timescale, so the longer window costs
+// no practical responsiveness for sustained chords.
+const FFT_SIZE = 16384;
 const TICK_MS = 120;
 
 export function useListen() {
